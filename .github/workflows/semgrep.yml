@@ -24,5 +24,5 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - run: |
-        apk add dotnet8-sdk
-        semgrep ci --supply-chain --allow-local-builds --verbose
+          apk add --no-cache dotnet8-sdk
+          semgrep ci --supply-chain --allow-local-builds --verbose
