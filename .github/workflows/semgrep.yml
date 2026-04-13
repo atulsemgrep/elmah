@@ -23,4 +23,6 @@ jobs:
       image: semgrep/semgrep
     steps:
     - uses: actions/checkout@v4
-    - run: semgrep ci --supply-chain --allow-local-builds --verbose
+    - run: |
+        apk add dotnet8-sdk
+        semgrep ci --supply-chain --allow-local-builds --verbose
