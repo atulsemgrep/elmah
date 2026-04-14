@@ -1,54 +1,66 @@
-name: Semgrep Supply Chain (packages.config)
+name: Semgrep
 
 on:
-  push:
-    branches: ["main", "master"]
-  pull_request:
-  workflow_dispatch:
+  workflow_dispatch: {}
+
+env:
+  repo-path: ./server
+  sca-stubs-path: ./sca-stubs
+  sca-cache-key-root: stubs
 
 jobs:
-  test-converter:
-    name: Test packages.config converter
-    runs-on: ubuntu-latest
+  generate-stubs:
+    name: Generate Package Lock Stubs
+    runs-on: ubuntu-24.04
+    if: github.actor != 'dependabot[bot]'
+
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Generate Stubs
+        uses: ./.github/actions/new-sca-project-stubs
         with:
-          python-version: "3.11"
+          repo-path: ${{ env.repo-path }}
+          stub-project-path: ${{ env.sca-stubs-path }}
 
-      - name: Run converter unit tests
-        run: python scripts/test_packages_config_to_csproj.py 
+      - name: Save Project Stubs
+        id: stubs-cache
+        uses: actions/cache/save@v5
+        with:
+          enableCrossOsArchive: true
+          path: ${{ env.sca-stubs-path }}/**
+          key: ${{ env.sca-cache-key-root }}-${{ hashFiles('**/packages.config') }}
 
   semgrep:
-    name: Semgrep Supply Chain Scan
-    runs-on: ubuntu-latest
-    needs: test-converter
+    name: semgrep/ci
+    needs: [generate-stubs]
+    runs-on: ubuntu-24.04
     if: github.actor != 'dependabot[bot]'
+
+    env:
+      SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+    container:
+      image: semgrep/semgrep
+
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - name: Install Semgrep
-        run: pip install semgrep
+      - name: Add packages needed for actions/cache restore to work
+        run: |
+          apk update
+          apk add --no-cache zstd tar
 
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+      - name: Restore Project Stubs
+        id: stubs-cache
+        uses: actions/cache/restore@v5
         with:
-          dotnet-version: "8.x"
-
-      - name: Convert packages.config
-        # --validate-restore: attempts dotnet restore after writing each synthetic .csproj,
-        # strips any packages causing NU1202 (incompatible TFM), and retries.
-        # This ensures the maximum number of packages are scanned even when a repo
-        # contains old packages that only ship ancient TFM assets (e.g. net35-only).
-        run: python scripts/packages_config_to_csproj.py --scan-dir . --validate-restore
+          fail-on-cache-miss: true
+          enableCrossOsArchive: true
+          path: ${{ env.sca-stubs-path }}/**
+          key: ${{ env.sca-cache-key-root }}-${{ hashFiles('**/packages.config') }}
 
       - name: Run Semgrep
-        run: semgrep ci --allow-local-builds --supply-chain
-        env:
-          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
-
-      - name: Clean up synthetic files
-        if: always()
-        run: find . -type d -name "_semgrep_sc" -exec rm -rf {} +
+        run: semgrep ci --allow-local-builds --verbose
