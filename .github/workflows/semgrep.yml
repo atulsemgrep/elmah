@@ -45,7 +45,7 @@ jobs:
         run: python scripts/packages_config_to_csproj.py --scan-dir . --validate-restore
 
       - name: Run Semgrep
-        run: semgrep ci --allow-local-builds
+        run: semgrep ci --allow-local-builds --supply-chain --verbose
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
